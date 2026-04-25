@@ -1,111 +1,116 @@
 from http import HTTPStatus
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
+from fast_api.database import get_session
+from fast_api.models.models import User
 from fast_api.schemas.user_schemas import UserIn, UserList, UserOut
 
 app = FastAPI(title='Meu primeiro CRUD sozinho')
 
-users_db = [
-    # {
-    #     'name': 'Gustavo Neri',
-    #     'phone': '11970299205',
-    #     'email': 'gustavoneri448@gmail.com',
-    #     'password': '123456789',
-    #     'city': 'Jundiai',
-    #     'state': 'SP',
-    #     'age': 24,
-    # },
-    # {
-    #     'name': 'Camila Souza',
-    #     'phone': '11988887777',
-    #     'email': 'camila.souza@email.com',
-    #     'password': 'senha123',
-    #     'city': 'null',
-    #     'state': 'SP',
-    #     'age': 31,
-    # },
-    # {
-    #     'name': 'Lucas Andrade',
-    #     'phone': '11955554444',
-    #     'email': 'lucas.andrade@email.com',
-    #     'password': 'abc123456',
-    #     'city': 'Campinas',
-    #     'state': 'null',
-    #     'age': 28,
-    # },
-    # {
-    #     'name': 'Mariana Costa',
-    #     'phone': '11933332222',
-    #     'email': 'mariana.costa@email.com',
-    #     'password': 'minhasenha',
-    #     'city': 'null',
-    #     'state': 'null',
-    #     'age': 35,
-    # },
-    # {
-    #     'name': 'Felipe Rocha',
-    #     'phone': '11911110000',
-    #     'email': 'felipe.rocha@email.com',
-    #     'password': 'senhaSegura',
-    #     'city': 'São Paulo',
-    #     'state': 'SP',
-    #     'age': 27,
-    # },
-]
+router = APIRouter(prefix='/users')
+
+users_db = []
 
 
 @app.get('/', status_code=HTTPStatus.OK, response_model=UserList)
-def get_user():
-    return {'users': users_db}
+def get_user(limit: int = 10, offset: int = 0, session=Depends(get_session)):
+    users = session.scalars(select(User).limit(limit).offset(offset))
+    return {'users': users}
 
 
-@app.get('/users/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
-def get_user_id(phone: str):
-    response = next(
-        (user for user in users_db if user['phone'] == phone), None
-    )
+@app.get('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
+def get_user_id(phone: str, session=Depends(get_session)):
+    db_user = session.scalar(select(User).where(User.phone == phone))
 
-    if response is None:
+    if db_user is None:
         raise HTTPException(status_code=404, detail='User not found')
 
-    return response
+    return db_user
 
 
-@app.post('/users', status_code=HTTPStatus.CREATED, response_model=UserOut)
-def create_user(user: UserIn):
-    response = user.model_dump()
-    users_db.append(response)
-    return response
+app.include_router(router)
 
 
-@app.put('/users/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
-def update_user(phone: str, user: UserIn):
-    response = next(
-        (user for user in users_db if user['phone'] == phone), None
+@app.post('/', status_code=HTTPStatus.CREATED, response_model=UserOut)
+def create_user(user: UserIn, session=Depends(get_session)):
+
+    db_user = session.scalar(
+        select(User).where(
+            (User.username == user.username)
+            | (User.email == user.email)
+            | (User.phone == user.phone)
+        )
     )
 
-    if response is None:
-        raise HTTPException(status_code=404, detail='User not found')
+    if db_user:
+        if db_user.username == user.username:
+            raise HTTPException(
+                detail='Username already exists',
+                status_code=HTTPStatus.CONFLICT,
+            )
+        elif db_user.email == user.email:
+            raise HTTPException(
+                detail='Email already exists', status_code=HTTPStatus.CONFLICT
+            )
+        elif db_user.phone == user.phone:
+            raise HTTPException(
+                detail='Phone already exists', status_code=HTTPStatus.CONFLICT
+            )
 
-    update_user = user.model_dump()
-    update_user['phone'] = phone
-
-    index = users_db.index(response)
-    users_db[index] = update_user
-    return update_user
-
-
-@app.delete(
-    '/users/{phone}', status_code=HTTPStatus.OK, response_model=UserOut
-)
-def delete_user(phone: str):
-    response = next(
-        (user for user in users_db if user['phone'] == phone), None
+    db_user = User(
+        username=user.username,
+        phone=user.phone,
+        email=user.email,
+        password=user.password,
     )
 
-    if response is None:
-        raise HTTPException(status_code=404, detail='User not found')
+    session.add(db_user)
+    session.commit()
+    session.refresh(db_user)
 
-    index = users_db.index(response)
-    return users_db.pop(index)
+    return db_user
+
+
+@app.put('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
+def update_user(phone: str, user: UserIn, session=Depends(get_session)):
+    response = session.scalar(select(User).where(User.phone == phone))
+
+    if not response:
+        raise HTTPException(
+            detail='User Not Found', status_code=HTTPStatus.NOT_FOUND
+        )
+
+    try:
+        response.username = user.username
+        response.email = user.email
+        response.password = user.password
+        response.phone = user.phone
+
+        session.add(response)
+        session.commit()
+        session.refresh(response)
+
+        return response
+    except IntegrityError:
+        raise HTTPException(
+            detail='Username or Email already exists',
+            status_code=HTTPStatus.CONFLICT,
+        )
+
+
+@app.delete('/{phone}', status_code=HTTPStatus.OK)
+def delete_user(phone: str, session=Depends(get_session)):
+    response = session.scalar(select(User).where(User.phone == phone))
+
+    if not response:
+        raise HTTPException(
+            detail='User Not Found', status_code=HTTPStatus.NOT_FOUND
+        )
+
+    session.delete(response)
+    session.commit()
+
+    return {'message': 'User Deleted'}

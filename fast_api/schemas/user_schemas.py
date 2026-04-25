@@ -1,15 +1,13 @@
 from typing import List
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class UserOut(BaseModel):
-    name: str
+    username: str
     phone: str
     email: EmailStr
-    city: str | None = None
-    state: str | None = None
-    age: int
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserIn(UserOut):

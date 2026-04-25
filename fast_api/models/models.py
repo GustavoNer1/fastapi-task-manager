@@ -9,14 +9,19 @@ table_registry = registry()
 
 
 @table_registry.mapped_as_dataclass
+# slqalchemy entende a classe User como tabela
 class User:
     __tablename__ = 'users'
     # Definição do nome da tabela
 
     id: Mapped[int] = mapped_column(init=False, primary_key=True)
     username: Mapped[str] = mapped_column(unique=True)
+    phone: Mapped[str] = mapped_column(unique=True)
     email: Mapped[str] = mapped_column(unique=True)
     password: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(
+        init=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
         init=False, server_default=func.now()
     )

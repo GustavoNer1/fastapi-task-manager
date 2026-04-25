@@ -7,9 +7,12 @@ from fast_api.models.models import User
 
 def test_create_user(session, mock_db_time):
 
-    with mock_db_time(model=User) as time:
+    with mock_db_time(model=User) as (time, updated_time):
         new_user = User(
-            username='test', email='test@test.com', password='secret'
+            username='test',
+            email='test@test.com',
+            password='secret',
+            phone='11970299201',
         )
         session.add(new_user)
         session.commit()
@@ -22,4 +25,5 @@ def test_create_user(session, mock_db_time):
         'email': 'test@test.com',
         'password': 'secret',
         'created_at': time,
+        'updated_at': updated_time,
     }

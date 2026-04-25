@@ -1,140 +1,78 @@
 from http import HTTPStatus
 
-from fastapi.testclient import TestClient
-
-from fast_api.app import app, users_db
+from fast_api.app import users_db
+from fast_api.schemas.user_schemas import UserOut
 
 
 def reset_users_db():
     users_db.clear()
 
 
-def test_create_user():
-    reset_users_db()
-    client = TestClient(app)
+def test_create_user(client):
+    # reset_users_db()
+    # client = TestClient(app)
 
     payload = {
-        'name': 'Felipe Rocha',
+        'username': 'Felipe Rocha',
         'phone': '11911110000',
         'email': 'felipe.rocha@email.com',
         'password': 'senhaSegura',
-        'city': 'São Paulo',
-        'state': 'SP',
-        'age': 27,
     }
 
-    response = client.post('/users', json=payload)
+    response = client.post('/', json=payload)
 
     assert response.status_code == HTTPStatus.CREATED
     assert response.json() == {
-        'name': 'Felipe Rocha',
+        'username': 'Felipe Rocha',
         'phone': '11911110000',
         'email': 'felipe.rocha@email.com',
-        'city': 'São Paulo',
-        'state': 'SP',
-        'age': 27,
     }
 
 
-def test_get_user_return_message():
-    reset_users_db()
-    client = TestClient(app)
-
-    client.post(
-        '/users',
-        json={
-            'name': 'Felipe Rocha',
-            'phone': '11911110000',
-            'email': 'felipe.rocha@email.com',
-            'password': 'senhaSegura',
-            'city': 'São Paulo',
-            'state': 'SP',
-            'age': 27,
-        },
-    )
-
+def test_get_user_return_message(client):
     response = client.get('/')
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {
-        'users': [
-            {
-                'name': 'Felipe Rocha',
-                'phone': '11911110000',
-                'email': 'felipe.rocha@email.com',
-                'city': 'São Paulo',
-                'state': 'SP',
-                'age': 27,
-            }
-        ]
-    }
+    assert response.json() == {'users': []}
 
 
-def test_update_user():
-    reset_users_db()
-    client = TestClient(app)
+def test_get_with_user(client, user):
+    user_db = UserOut.model_validate(user).model_dump()
+    response = client.get('/')
 
-    client.post(
-        '/users',
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == {'users': [user_db]}
+
+
+def test_get_user_phone(client, user):
+    user_db = UserOut.model_validate(user).model_dump()
+    response = client.get(f'/{user.phone}')
+
+    assert response.status_code == HTTPStatus.OK
+    assert response.json() == user_db
+
+
+def test_update_user(client, user):
+    response = client.put(
+        f'/{user.phone}',
         json={
-            'name': 'Felipe Rocha',
-            'phone': '11911110000',
-            'email': 'felipe.rocha@email.com',
+            'username': 'Felipe Toledo',
+            'phone': '11911110100',
+            'email': 'felipe.aguiar@email.com',
             'password': 'senhaSegura',
-            'city': 'São Paulo',
-            'state': 'SP',
-            'age': 27,
         },
     )
 
-    payload = {
-        'name': 'Gustavo Alencar',
-        'phone': '11911110000',
-        'email': 'alencar.rocha@email.com',
-        'password': 'segurançasenha',
-        'city': 'Campinas',
-        'state': 'SP',
-        'age': 24,
-    }
-
-    response = client.put('/users/11911110000', json=payload)
-
     assert response.status_code == HTTPStatus.OK
     assert response.json() == {
-        'name': 'Gustavo Alencar',
-        'phone': '11911110000',
-        'email': 'alencar.rocha@email.com',
-        'city': 'Campinas',
-        'state': 'SP',
-        'age': 24,
+        'username': 'Felipe Toledo',
+        'phone': '11911110100',
+        'email': 'felipe.aguiar@email.com',
     }
 
 
-def test_delete():
-    reset_users_db()
-    client = TestClient(app)
-
-    client.post(
-        '/users',
-        json={
-            'name': 'Gustavo Alencar',
-            'phone': '11911110000',
-            'email': 'alencar.rocha@email.com',
-            'password': 'segurançasenha',
-            'city': 'Campinas',
-            'state': 'SP',
-            'age': 24,
-        },
-    )
-
-    response = client.delete('/users/11911110000')
+def test_delete(client, user):
+    response = client.delete(f'/{user.phone}')
 
     assert response.status_code == HTTPStatus.OK
-    assert response.json() == {
-        'name': 'Gustavo Alencar',
-        'phone': '11911110000',
-        'email': 'alencar.rocha@email.com',
-        'city': 'Campinas',
-        'state': 'SP',
-        'age': 24,
-    }
+    assert response.json() == {'message': 'User Deleted'}
