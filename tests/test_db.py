@@ -9,21 +9,22 @@ def test_create_user(session, mock_db_time):
 
     with mock_db_time(model=User) as (time, updated_time):
         new_user = User(
-            username='test',
-            email='test@test.com',
+            username='testexin',
+            email='testexin@test.com',
             password='secret',
-            phone='11970299201',
+            phone='11970299255',
         )
         session.add(new_user)
         session.commit()
 
-        user = session.scalar(select(User).where(User.username == 'test'))
+        user = session.scalar(select(User).where(User.username == 'testexin'))
 
     assert asdict(user) == {
         'id': 1,
-        'username': 'test',
-        'email': 'test@test.com',
+        'username': 'testexin',
+        'email': 'testexin@test.com',
         'password': 'secret',
+        'phone': '11970299255',
         'created_at': time,
         'updated_at': updated_time,
     }

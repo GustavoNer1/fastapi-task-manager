@@ -3,40 +3,72 @@ from http import HTTPStatus
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from fast_api.database import get_session
 from fast_api.models.models import User
 from fast_api.schemas.user_schemas import UserIn, UserList, UserOut
+from fast_api.security import get_password_hash
 
+# Cria a aplicação principal FastAPI.
+# Esse objeto representa sua API.
 app = FastAPI(title='Meu primeiro CRUD sozinho')
 
-router = APIRouter(prefix='/users')
+# Cria um grupo de rotas com prefixo /users.
+# Todas as rotas abaixo ficarão dentro de /users.
+router = APIRouter(prefix='/users', tags=['users'])
 
-users_db = []
 
+# Lista usuários com paginação simples.
+# Exemplo:
+# GET /users/?limit=10&offset=0
+@router.get('/', status_code=HTTPStatus.OK, response_model=UserList)
+def get_users(
+    limit: int = 10,
+    offset: int = 0,
+    session: Session = Depends(get_session),
+):
+    # Monta e executa uma consulta:
+    # SELECT * FROM users LIMIT :limit OFFSET :offset
+    users = list(session.scalars(select(User).limit(limit).offset(offset)))
 
-@app.get('/', status_code=HTTPStatus.OK, response_model=UserList)
-def get_user(limit: int = 10, offset: int = 0, session=Depends(get_session)):
-    users = session.scalars(select(User).limit(limit).offset(offset))
+    # Retorna no formato esperado pelo UserList:
+    # {"users": [...]}
     return {'users': users}
 
 
-@app.get('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
-def get_user_id(phone: str, session=Depends(get_session)):
+# Busca um usuário pelo telefone.
+# Exemplo:
+# GET /users/11999999999
+@router.get('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
+def get_user_by_phone(
+    phone: str,
+    session: Session = Depends(get_session),
+):
+    # Busca o primeiro usuário cujo telefone seja igual ao parâmetro da URL.
     db_user = session.scalar(select(User).where(User.phone == phone))
 
+    # Se não encontrar, retorna erro 404.
     if db_user is None:
-        raise HTTPException(status_code=404, detail='User not found')
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='User not found',
+        )
 
+    # Retorna o objeto ORM.
+    # O response_model=UserOut filtra a resposta e remove a senha.
     return db_user
 
 
-app.include_router(router)
-
-
-@app.post('/', status_code=HTTPStatus.CREATED, response_model=UserOut)
-def create_user(user: UserIn, session=Depends(get_session)):
-
+# Cria um novo usuário.
+# Exemplo:
+# POST /users/
+@router.post('/', status_code=HTTPStatus.CREATED, response_model=UserOut)
+def create_user(
+    user: UserIn,
+    session=Depends(get_session),
+):
+    # Verifica se já existe usuário com mesmo username, email ou phone.
     db_user = session.scalar(
         select(User).where(
             (User.username == user.username)
@@ -45,72 +77,121 @@ def create_user(user: UserIn, session=Depends(get_session)):
         )
     )
 
+    # Se encontrou algum conflito, retorna uma mensagem específica.
     if db_user:
         if db_user.username == user.username:
             raise HTTPException(
-                detail='Username already exists',
                 status_code=HTTPStatus.CONFLICT,
-            )
-        elif db_user.email == user.email:
-            raise HTTPException(
-                detail='Email already exists', status_code=HTTPStatus.CONFLICT
-            )
-        elif db_user.phone == user.phone:
-            raise HTTPException(
-                detail='Phone already exists', status_code=HTTPStatus.CONFLICT
+                detail='Username already exists',
             )
 
+        if db_user.email == user.email:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Email already exists',
+            )
+
+        if db_user.phone == user.phone:
+            raise HTTPException(
+                status_code=HTTPStatus.CONFLICT,
+                detail='Phone already exists',
+            )
+
+    # Cria uma instância do model SQLAlchemy.
+    # UserIn é schema de entrada.
+    # User é model de banco.
     db_user = User(
         username=user.username,
         phone=user.phone,
         email=user.email,
-        password=user.password,
+        password=get_password_hash(user.password),
     )
 
+    # Adiciona o objeto na sessão.
     session.add(db_user)
+
+    # Confirma a transação e salva no banco.
     session.commit()
+
+    # Atualiza o objeto com dados gerados pelo banco.
+    # Exemplo: id, created_at, updated_at.
     session.refresh(db_user)
 
+    # Retorna o usuário criado.
+    # UserOut remove password da resposta.
     return db_user
 
 
-@app.put('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
-def update_user(phone: str, user: UserIn, session=Depends(get_session)):
-    response = session.scalar(select(User).where(User.phone == phone))
+# Atualiza um usuário existente pelo telefone.
+# Exemplo:
+# PUT /users/11999999999
+@router.put('/{phone}', status_code=HTTPStatus.OK, response_model=UserOut)
+def update_user(
+    phone: str,
+    user: UserIn,
+    session: Session = Depends(get_session),
+):
+    # Busca o usuário pelo telefone atual.
+    db_user = session.scalar(select(User).where(User.phone == phone))
 
-    if not response:
+    # Se não encontrar, retorna 404.
+    if db_user is None:
         raise HTTPException(
-            detail='User Not Found', status_code=HTTPStatus.NOT_FOUND
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='User not found',
         )
 
     try:
-        response.username = user.username
-        response.email = user.email
-        response.password = user.password
-        response.phone = user.phone
+        # Atualiza os campos do objeto encontrado.
+        db_user.username = user.username
+        db_user.email = user.email
+        db_user.password = get_password_hash(user.password)
+        db_user.phone = user.phone
 
-        session.add(response)
+        # Confirma as alterações.
         session.commit()
-        session.refresh(response)
 
-        return response
+        # Atualiza o objeto com os dados mais recentes do banco.
+        session.refresh(db_user)
+
+        return db_user
+
     except IntegrityError:
+        # Depois de erro de integridade, a sessão precisa de rollback.
+        session.rollback()
+
         raise HTTPException(
-            detail='Username or Email already exists',
             status_code=HTTPStatus.CONFLICT,
+            detail='Username, email or phone already exists',
         )
 
 
-@app.delete('/{phone}', status_code=HTTPStatus.OK)
-def delete_user(phone: str, session=Depends(get_session)):
-    response = session.scalar(select(User).where(User.phone == phone))
+# Remove um usuário pelo telefone.
+# Exemplo:
+# DELETE /users/11999999999
+@router.delete('/{phone}', status_code=HTTPStatus.OK)
+def delete_user(
+    phone: str,
+    session: Session = Depends(get_session),
+):
+    # Busca o usuário pelo telefone.
+    db_user = session.scalar(select(User).where(User.phone == phone))
 
-    if not response:
+    # Se não encontrar, retorna 404.
+    if db_user is None:
         raise HTTPException(
-            detail='User Not Found', status_code=HTTPStatus.NOT_FOUND
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='User not found',
         )
 
-    session.delete(response)
+    # Marca o objeto para remoção.
+    session.delete(db_user)
+
+    # Confirma a exclusão no banco.
     session.commit()
 
     return {'message': 'User Deleted'}
+
+
+# Inclui o grupo de rotas /users na aplicação principal.
+app.include_router(router)
