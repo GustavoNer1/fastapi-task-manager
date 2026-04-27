@@ -1,14 +1,25 @@
 from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from fast_api.database import get_session
 from fast_api.models.models import User
-from fast_api.schemas.user_schemas import UserIn, UserList, UserOut
-from fast_api.security import get_password_hash
+from fast_api.schemas.user_schemas import (
+    Token,
+    UserIn,
+    UserList,
+    UserOut,
+)
+from fast_api.security import (
+    create_acess_token,
+    get_current_user,
+    get_password_hash,
+    verify_password,
+)
 
 # Cria a aplicação principal FastAPI.
 # Esse objeto representa sua API.
@@ -44,6 +55,7 @@ def get_users(
 def get_user_by_phone(
     phone: str,
     session: Session = Depends(get_session),
+    current_user=Depends(get_current_user),
 ):
     # Busca o primeiro usuário cujo telefone seja igual ao parâmetro da URL.
     db_user = session.scalar(select(User).where(User.phone == phone))
@@ -130,31 +142,28 @@ def update_user(
     phone: str,
     user: UserIn,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    # Busca o usuário pelo telefone atual.
-    db_user = session.scalar(select(User).where(User.phone == phone))
-
-    # Se não encontrar, retorna 404.
-    if db_user is None:
+    if current_user.phone != phone:
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='User not found',
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Not enough permission'
         )
 
     try:
         # Atualiza os campos do objeto encontrado.
-        db_user.username = user.username
-        db_user.email = user.email
-        db_user.password = get_password_hash(user.password)
-        db_user.phone = user.phone
+        current_user.username = user.username
+        current_user.email = user.email
+        current_user.password = get_password_hash(user.password)
+        current_user.phone = user.phone
 
         # Confirma as alterações.
         session.commit()
 
         # Atualiza o objeto com os dados mais recentes do banco.
-        session.refresh(db_user)
+        session.refresh(current_user)
 
-        return db_user
+        return current_user
 
     except IntegrityError:
         # Depois de erro de integridade, a sessão precisa de rollback.
@@ -173,19 +182,17 @@ def update_user(
 def delete_user(
     phone: str,
     session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
 ):
-    # Busca o usuário pelo telefone.
-    db_user = session.scalar(select(User).where(User.phone == phone))
 
-    # Se não encontrar, retorna 404.
-    if db_user is None:
+    if current_user.phone != phone:
         raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='User not found',
+            status_code=HTTPStatus.FORBIDDEN,
+            detail='Not enough permission'
         )
 
     # Marca o objeto para remoção.
-    session.delete(db_user)
+    session.delete(current_user)
 
     # Confirma a exclusão no banco.
     session.commit()
@@ -195,3 +202,26 @@ def delete_user(
 
 # Inclui o grupo de rotas /users na aplicação principal.
 app.include_router(router)
+
+
+@app.post('/token', response_model=Token)
+def login_for_acess_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    session=Depends(get_session),
+):
+    user = session.scalar(select(User).where(User.email == form_data.username))
+
+    if not user:
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail='Incorrect Email or Password',
+        )
+
+    if not verify_password(form_data.password, user.password):
+        raise HTTPException(
+            status_code=HTTPStatus.UNAUTHORIZED,
+            detail='Incorrect Email or Password',
+        )
+
+    acess_token = create_acess_token({'sub': user.email})
+    return {'acess_token': acess_token, 'token_type': 'Bearer'}

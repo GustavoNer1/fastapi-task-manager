@@ -57,3 +57,8 @@ class UserOut(UserBase):
 class UserList(BaseModel):
     # Lista de usuários no formato público UserOut.
     users: list[UserOut]
+
+
+class Token(BaseModel):
+    acess_token: str
+    token_type: str
