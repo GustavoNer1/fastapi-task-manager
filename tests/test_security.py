@@ -1,14 +1,13 @@
 from jwt import decode
 
-from fast_api.security import ALGORITHM, SECRET_KEY, create_acess_token
+from fast_api.security import create_access_token
 
-
-def test_jwt():
+def test_jwt(settings):
     data = {'test': 'test'}
 
-    token = create_acess_token(data)
+    token = create_access_token(data)
 
-    decoded = decode(token, SECRET_KEY, algorithms=ALGORITHM)
+    decoded = decode(token, settings.SECRET_KEY, algorithms=settings.ALGORITHM)
 
     assert decoded['test'] == data['test']
     assert 'exp' in decoded

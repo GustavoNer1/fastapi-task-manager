@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
+from fast_api.settings import Settings
 
 from fast_api.app import app
 from fast_api.database import get_session
@@ -81,8 +82,12 @@ def user(session):
 @pytest.fixture
 def token(client, user):
     response = client.post(
-        '/token',
+        '/auth/token',
         data={'username': user.email, 'password': user.clean_password},
     )
 
-    return response.json()['acess_token']
+    return response.json()['access_token']
+
+@pytest.fixture
+def settings():
+    return Settings()
