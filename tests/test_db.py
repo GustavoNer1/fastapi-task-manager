@@ -1,11 +1,14 @@
 from dataclasses import asdict
 
+import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from fast_api.models.models import User
 
 
-def test_create_user(session, mock_db_time):
+@pytest.mark.asyncio
+async def test_create_user(session: AsyncSession, mock_db_time):
 
     with mock_db_time(model=User) as (time, updated_time):
         new_user = User(
@@ -15,9 +18,11 @@ def test_create_user(session, mock_db_time):
             phone='11970299255',
         )
         session.add(new_user)
-        session.commit()
+        await session.commit()
 
-        user = session.scalar(select(User).where(User.username == 'testexin'))
+        user = await session.scalar(
+            select(User).where(User.username == 'testexin')
+        )
 
     assert asdict(user) == {
         'id': 1,

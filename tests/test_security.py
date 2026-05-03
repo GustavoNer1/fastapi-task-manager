@@ -2,6 +2,7 @@ from jwt import decode
 
 from fast_api.security import create_access_token
 
+
 def test_jwt(settings):
     data = {'test': 'test'}
 

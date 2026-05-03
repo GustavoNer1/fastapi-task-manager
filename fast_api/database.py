@@ -1,13 +1,14 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+# from sqlalchemy import create_engine
+# from sqlalchemy.orm import Session
+
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from fast_api.settings import Settings
 
 settings = Settings()
+engine = create_async_engine(settings.DATABASE_URL)
 
-engine = create_engine(settings.DATABASE_URL)
 
-
-def get_session():
-    with Session(engine) as session:
+async def get_session():  # pragma: no cover
+    async with AsyncSession(engine, expire_on_commit=False) as session:
         yield session
