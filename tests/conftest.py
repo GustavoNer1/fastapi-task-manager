@@ -7,7 +7,7 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.pool import StaticPool
+from testcontainers.postgres import PostgresContainer
 
 from fast_api.app import app
 from fast_api.database import get_session
@@ -25,7 +25,12 @@ class UserFactory(factory.Factory):
     password = factory.LazyAttribute(lambda obj: f'{obj.username}@example.com')
     phone = factory.Sequence(lambda n: f'119{n:08d}')
 
-
+@pytest.fixture(scope='session') 
+def engine():
+    with PostgresContainer('postgres:16', driver='psycopg') as postgres:
+        _engine = create_async_engine(postgres.get_connection_url())
+        yield _engine
+        
 @pytest.fixture
 def client(session):
     def get_session_override():
@@ -40,19 +45,17 @@ def client(session):
 
 @pytest_asyncio.fixture
 async def session():
-    engine = create_async_engine(
-        'sqlite+aiosqlite:///:memory:',
-        connect_args={'check_same_thread': False},
-        poolclass=StaticPool,
-    )
-    async with engine.begin() as conn:
-        await conn.run_sync(table_registry.metadata.create_all)
+    with PostgresContainer('postgres:16', driver='psycopg') as postgres:
+        engine = create_async_engine(postgres.get_connection_url())
 
-    async with AsyncSession(engine, expire_on_commit=False) as session:
-        yield session
+        async with engine.begin() as conn:
+            await conn.run_sync(table_registry.metadata.create_all)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(table_registry.metadata.drop_all)
+        async with AsyncSession(engine, expire_on_commit=False) as session:
+            yield session
+
+        async with engine.begin() as conn:
+            await conn.run_sync(table_registry.metadata.drop_all)
 
 
 @contextmanager
