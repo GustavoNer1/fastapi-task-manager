@@ -1,7 +1,8 @@
 from datetime import datetime
+from enum import Enum
 
-from sqlalchemy import func
-from sqlalchemy.orm import Mapped, mapped_column, registry
+from sqlalchemy import ForeignKey, func
+from sqlalchemy.orm import Mapped, mapped_column, registry, relationship
 
 # Cria o registrador dos modelos/tabelas do projeto.
 # Ele guarda os metadados que o SQLAlchemy e o Alembic usam.
@@ -52,3 +53,39 @@ class User:
         onupdate=func.now(),
         nullable=False,
     )
+
+    todos: Mapped[list['Todo']] = relationship(
+        init=False,
+        cascade='all, delete-orphan',
+        lazy='selectin',
+    )
+
+
+class TodoState(str, Enum):
+    draft = 'draft'
+    todo = 'todo'
+    doing = 'doing'
+    done = 'done'
+    trash = 'trash'
+
+
+@table_registry.mapped_as_dataclass
+class Todo:
+    __tablename__ = 'todos'
+    id: Mapped[int] = mapped_column(init=False, primary_key=True)
+    title: Mapped[str] = mapped_column(nullable=False)
+    description: Mapped[str] = mapped_column(nullable=True)
+    state: Mapped[TodoState] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        init=False,
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        init=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    user_id: Mapped[int] = mapped_column(ForeignKey('users.id'))
